@@ -1,8 +1,11 @@
 """Collect historical OHLCV candles from Coinbase and Kraken, save them to CSV.
 
-Fetches the past 90 days of 1-hour candles for BTC/USD and ETH/USD from each
-exchange (public endpoints, no API key) and writes one CSV per
-exchange+symbol into ``data_store/``.
+Fetches the past 90 days of 1-hour candles (public endpoints, no API key) and
+writes one CSV per exchange+symbol into ``data_store/``. The symbol set is
+per-exchange (see ``SYMBOLS``): Coinbase collects a wider basket, while Kraken
+stays on BTC/USD and ETH/USD. Keeping the sets separate means adding a
+Coinbase-only pair can't accidentally send an unavailable pair to Kraken (which
+``MarketFeed`` would reject with a loud ``ValueError``).
 
 Storage lives here, not in ``MarketFeed``: the feed's job is collecting and
 normalizing market data, so the multi-page OHLCV fetch is a method on the feed
@@ -28,8 +31,21 @@ import pandas as pd
 
 from data.feed import MarketFeed
 
-EXCHANGES = ("coinbase", "kraken")
-SYMBOLS = ("BTC/USD", "ETH/USD")
+# Symbols to collect per exchange. Coinbase carries the wider basket; Kraken
+# stays on the two pairs the cross-exchange work (Model 3) uses.
+SYMBOLS = {
+    "coinbase": (
+        "BTC/USD",
+        "ETH/USD",
+        "SOL/USD",
+        "ADA/USD",
+        "LINK/USD",
+        "LTC/USD",
+        "XRP/USD",
+    ),
+    "kraken": ("BTC/USD", "ETH/USD"),
+}
+EXCHANGES = tuple(SYMBOLS)
 TIMEFRAME = "1h"
 DAYS = 90
 OUTPUT_DIR = Path("data_store")
@@ -54,13 +70,13 @@ def _save_candles(exchange: str, symbol: str, candles: list[list[float]]) -> Pat
 
 
 async def collect_exchange(exchange_id: str) -> None:
-    """Fetch and save both symbols' 90-day 1h history from one exchange."""
+    """Fetch and save each of this exchange's symbols' 90-day 1h history."""
     async with MarketFeed(exchange_id) as feed:
         # 'since' in epoch ms; the exchange's own clock avoids local-clock skew.
         since = feed.exchange.milliseconds() - DAYS * 24 * 60 * 60 * 1000
         # Symbols sequentially within an exchange so ccxt's per-instance rate
         # limiter paces the paginated requests.
-        for symbol in SYMBOLS:
+        for symbol in SYMBOLS[exchange_id]:
             candles = await feed.fetch_ohlcv(symbol, TIMEFRAME, since)
             path = _save_candles(exchange_id, symbol, candles)
             print(f"{exchange_id} {symbol}: {len(candles)} candles -> {path}")

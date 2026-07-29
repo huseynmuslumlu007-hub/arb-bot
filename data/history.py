@@ -47,6 +47,23 @@ def load_candles(
     return df.set_index("datetime").sort_index()
 
 
+def load_stock_closes(ticker: str, timeframe: str = "1d") -> pd.Series:
+    """Load one ticker's collected daily closes, indexed by ``date`` (ascending).
+
+    Stock CSVs (from ``scripts.collect_stock_history``) have ``date``/``close``
+    columns rather than the crypto candle schema, hence a separate loader. Raises
+    ``FileNotFoundError`` if the file hasn't been collected yet.
+    """
+    path = OUTPUT_DIR / f"stock_{ticker}_{timeframe}.csv"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"No collected data at {path}. "
+            f"Run `python -m scripts.collect_stock_history` first."
+        )
+    df = pd.read_csv(path, parse_dates=["date"])
+    return df.set_index("date")["close"].sort_index()
+
+
 def align(
     symbol: str,
     exchanges,
