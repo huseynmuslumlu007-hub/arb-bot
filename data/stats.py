@@ -1,9 +1,10 @@
-"""Statistical tests for pair relationships: half-life and Engle-Granger.
+"""Shared statistics: cointegration (half-life, Engle-Granger) and momentum.
 
 Kept separate from ``data/history.py`` (which only loads and aligns CSVs) so the
-data-access layer stays free of modeling. Shared by ``scripts/check_correlation.py``
-(one pair, detailed narrative) and ``scripts/screen_pairs.py`` (all pairs, batch),
-so the cointegration maths lives in exactly one place.
+data-access layer stays free of modeling. Shared across the analysis scripts so
+each test's maths lives in exactly one place: ``check_correlation.py`` /
+``screen_pairs.py`` (cointegration), and ``check_momentum.py`` /
+``check_momentum_stocks.py`` (momentum autocorrelation).
 
 Requires statsmodels (a declared runtime dependency) for the cointegration test.
 """
@@ -71,4 +72,42 @@ def engle_granger(base: pd.Series, quote: pd.Series) -> CointResult:
         p_value=float(p_value),
         crit_5pct=float(crit[1]),
         half_life=half_life(spread),
+    )
+
+
+@dataclass
+class MomentumResult:
+    """Correlation of a past return with the next same-length return."""
+
+    corr: float  # NaN when n_obs < 3
+    n_obs: int  # overlapping (per-bar) observations
+    n_indep: int  # non-overlapping windows the noise band is based on
+    noise_band: float  # ~95% band (2/sqrt(n_indep)); |corr| below it ≈ zero
+
+
+def momentum_autocorrelation(log_prices: pd.Series, lookback: int) -> MomentumResult:
+    """Correlate the past ``lookback``-step return with the next same-length return.
+
+    Positive corr suggests momentum, negative suggests mean-reversion, near-zero
+    no linear effect at that horizon. Inputs are log prices so returns are simple
+    differences.
+
+    The windows overlap (computed at every bar), which autocorrelates the
+    observations and inflates the effective sample. The honesty guard is the noise
+    band: ``2/sqrt(n_indep)`` from the count of *non-overlapping* windows
+    (``n_obs // lookback``). A correlation smaller than the band is indistinguishable
+    from zero and must not be read as a signal. Returns ``corr=NaN`` when fewer than
+    three paired observations exist (e.g. a lookback too long for the window).
+    """
+    past = log_prices.diff(lookback)  # return over [t-lookback, t]
+    fwd = log_prices.shift(-lookback) - log_prices  # return over [t, t+lookback]
+    paired = np.column_stack([past.to_numpy(), fwd.to_numpy()])
+    paired = paired[~np.isnan(paired).any(axis=1)]
+    n_obs = len(paired)
+    if n_obs < 3:
+        return MomentumResult(corr=float("nan"), n_obs=n_obs, n_indep=0, noise_band=float("nan"))
+    corr = float(np.corrcoef(paired[:, 0], paired[:, 1])[0, 1])
+    n_indep = max(n_obs // lookback, 1)
+    return MomentumResult(
+        corr=corr, n_obs=n_obs, n_indep=n_indep, noise_band=2.0 / np.sqrt(n_indep)
     )

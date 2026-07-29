@@ -253,6 +253,15 @@ waved through.
 
 ## Model 6: Out-of-Sample Validation — a lead, then correctly disproven
 
+> **Reproducibility note.** This analysis used the original **2-year window,
+> 2024-07-29 → 2026-07-27**, of daily adjusted closes. `data_store/` has since
+> been extended to *full* price history (`period="max"`) for the momentum work,
+> so the live files no longer match what this section used — reproducing Model 6
+> exactly requires that 2-year slice, not the current files. Regenerate it on
+> demand with `python -m scripts.collect_stock_history_2y` (this overwrites the
+> full-history CSVs; restore them afterward with
+> `python -m scripts.collect_stock_history`).
+
 **Question:** The crypto pairs never cointegrated at all. Extending the method to
 equities (via yfinance, 2 years of daily adjusted closes), the gold pair GLD/GDX
 *did* pass an in-sample cointegration test — p = 0.016, a tradable ~14-day
